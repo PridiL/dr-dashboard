@@ -115,6 +115,28 @@ tr.group .gcount {
   float: right; font-weight: 500; font-size: 11.5px; color: var(--ink-soft); letter-spacing: 0;
 }
 #none { display: none; color: var(--ink-soft); padding: 26px; text-align: center; }
+.disc { margin-top: 18px; display: grid; gap: 14px; }
+.disc .card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 14px 16px 16px;
+}
+.disc h3 { margin: 0 0 8px; font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.disc p { font-size: 12px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 8px; }
+.disc p:last-child { margin-bottom: 0; }
+.disc b { color: var(--ink); font-weight: 600; }
+.disc ul.srclist { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 7px; }
+.disc ul.srclist li { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+.disc ul.srclist .src { margin-right: 6px; }
+.disc ul.fx {
+  margin: 4px 0 8px; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; gap: 8px 10px;
+}
+.disc ul.fx li {
+  font-size: 11.5px; background: var(--group-bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 5px 10px; display: flex; gap: 8px; align-items: baseline;
+}
+.disc ul.fx b { font-variant-numeric: tabular-nums; }
+.disc ul.fx .cn { color: var(--ink-faint); font-size: 11px; }
 footer { color: var(--ink-faint); font-size: 11.5px; margin-top: 14px; }
 @media (max-width: 700px) { #q { margin-left: 0; width: 100%; } }
 </style>
@@ -141,6 +163,45 @@ footer { color: var(--ink-faint); font-size: 11.5px; margin-top: 14px; }
     </table>
     <div id="none">No DR matches your search.</div>
   </div>
+  <section class="disc">
+    <div class="card">
+      <h3>Analyst target price — sources &amp; methodology</h3>
+      <p>The <b>Target Price (THB)</b> shown for each DR is derived from a published
+         analyst <b>consensus</b> target for the underlying security, converted to Thai Baht.
+         Sources are used in the following priority order (this run:
+         258 Google · 163 Yahoo · 5 TradingView):</p>
+      <ul class="srclist">
+        <li><span class="src src-g">Google Finance</span> — the <b>Average</b> of Wall Street
+            analysts' 12-month price targets shown on google.com/finance. Published mainly for
+            US-listed stocks; used first where available.</li>
+        <li><span class="src src-y">Yahoo Finance</span> — the mean analyst 12-month price target
+            (<i>targetMeanPrice</i>) across the analysts covering the stock. Covers most
+            international names.</li>
+        <li><span class="src src-t">TradingView</span> — the 1-year analyst consensus target
+            (<i>price target</i>). Used only where the two sources above have none
+            (e.g. China A-shares).</li>
+      </ul>
+      <p><b>Brokerage note:</b> each figure is an <b>aggregated consensus of price targets from
+         multiple sell-side brokerages / research houses</b> covering the stock. Google Finance,
+         Yahoo Finance and TradingView publish only the aggregate (and, where shown, the number of
+         contributing analysts) — they <b>do not disclose the individual brokerages</b> behind each
+         target, so specific broker names cannot be attributed here. ETFs and newly listed DRs
+         typically have no analyst coverage and therefore no target. Targets are analysts' opinions,
+         not guarantees, and change frequently.</p>
+    </div>
+    <div class="card">
+      <h3>Exchange rates used in the calculation</h3>
+      <p>Target Price (THB) = local-currency analyst target × exchange rate to THB ÷ conversion ratio.
+         The exchange rates below are <b>indicative spot mid-market rates</b> retrieved from
+         Yahoo Finance at the dashboard generation time (2026-07-23 09:16) and are used
+         <b>solely</b> to express foreign-currency targets in Thai Baht:</p>
+      <ul class="fx"><li><b>1 CNY = 4.9875 THB</b><span class="cn">Chinese Yuan (Renminbi)</span></li><li><b>1 DKK = 5.11 THB</b><span class="cn">Danish Krone</span></li><li><b>1 EUR = 38.503 THB</b><span class="cn">Euro</span></li><li><b>1 HKD = 4.3047 THB</b><span class="cn">Hong Kong Dollar</span></li><li><b>1 JPY = 0.2046 THB</b><span class="cn">Japanese Yen</span></li><li><b>1 SGD = 26.1742 THB</b><span class="cn">Singapore Dollar</span></li><li><b>1 TWD = 1.0446 THB</b><span class="cn">Taiwan Dollar</span></li><li><b>1 USD = 33.75 THB</b><span class="cn">US Dollar</span></li><li><b>1 VND = 0.0012788 THB</b><span class="cn">Vietnamese Dong</span></li></ul>
+      <p>These rates <b>fluctuate continuously</b> and may differ from the rates actually available
+         for currency conversion, from the DR issuer's conversion / settlement rate, and from
+         interbank or retail rates at any given moment. They are indicative only and are not a quote
+         or an offer to transact at these levels.</p>
+    </div>
+  </section>
   <footer>Prices &amp; conversion ratios: set.or.th · Analyst target price sourced in priority order Google Finance → Yahoo Finance → TradingView (Google publishes 12-month targets for US listings; Yahoo covers most international names; TradingView 1-year consensus catches China A-shares) · P/E, P/BV: Yahoo Finance consensus · Dividend yield is annualized (per year, trailing/forward 12 months) · 426/493 DRs have analyst targets — 258 Google, 163 Yahoo, 5 TradingView (ETFs and newly listed names typically have none) · Not investment advice.</footer>
 </div>
 <script>
