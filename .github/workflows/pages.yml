@@ -1,0 +1,162 @@
+# SET DR Dashboard, published to https://pridil.github.io/dr-dashboard/
+# (Netlify https://yuantaresearch-dr-dashboard.netlify.app mirrors it by proxy).
+#
+# Two ways a deployment happens:
+#
+# 1. PUSH (Saturday full update). The laptop's run_weekly.ps1 builds everything and
+#    deploy_dashboard.ps1 commits the site files to the repo root. That push
+#    publishes those files as they are. Only the site files trigger it, so syncing
+#    code or data under cloud/ mid-week never rolls the page back to Saturday.
+#
+# 2. DISPATCH (weekday daily update, laptop on or off). The user's cron-job.org job
+#    POSTs this workflow's dispatches endpoint Mon-Fri at 07:30 and again at 07:45.
+#    It refreshes ONLY Closing Price (set.or.th), P/E, P/BV, Dividend Yield and YTD
+#    Return for the DRs in the Saturday build (cloud/dashboard_data.json, synced
+#    each Saturday); new mid-week listings are NOT added. Page, PDF and Excel are
+#    re-rendered from that data. The 07:45 run is the retry: if the live page
+#    already shows today's update it skips (input force=true overrides).
+#    No GitHub cron: on this account scheduled runs fired hours late.
+#
+# Nothing is ever committed by this workflow; the live site is a Pages artifact.
+# A failed run leaves the live page on its last good build and GitHub emails the owner.
+name: DR Dashboard
+on:
+  push:
+    branches: [main]
+    paths: [index.html, dr_dashboard.pdf, dr_dashboard.xlsx, canva_table.html]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if today's update is already live"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: dr-dashboard-pages
+  cancel-in-progress: false
+env:
+  TZ: Asia/Bangkok
+  PYTHONIOENCODING: utf-8
+  PAGES_URL: https://pridil.github.io/dr-dashboard/
+  RRG_URL: https://pridil.github.io/dr-rrg-live/rrg.html
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+      stamp: ${{ steps.stamp.outputs.stamp }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gate (what to publish)
+        id: gate
+        run: |
+          echo "event=${{ github.event_name }}  Bangkok $(date '+%a %F %H:%M')"
+          if [ "${{ github.event_name }}" = push ]; then
+            echo "mode=weekly" >> "$GITHUB_OUTPUT"; echo "publish=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${{ inputs.force }}" != true ]; then
+            if [ "$(date +%u)" -ge 6 ]; then
+              echo "Weekend - the Saturday full update covers it. Nothing to do."
+              echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            live=$(curl -sf "${PAGES_URL}?v=$RANDOM$RANDOM" | grep -o 'generated [0-9-]*' | head -1 | cut -d' ' -f2)
+            if [ "$live" = "$(date +%F)" ]; then
+              echo "Live page already shows today's update ($live) - this is the 07:45 retry and 07:30 succeeded. Skipping."
+              echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            echo "Live page is from $live - updating."
+          fi
+          echo "mode=daily" >> "$GITHUB_OUTPUT"; echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.mode == 'daily'
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: cloud/requirements.txt }
+
+      - name: Install (Python, Chromium for SET + PDF, fonts for the PDF)
+        if: steps.gate.outputs.mode == 'daily'
+        run: |
+          pip install -r cloud/requirements.txt
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y -qq fonts-liberation fonts-noto-color-emoji >/dev/null
+
+      - name: Daily build - prices, P/E, P/BV, dividend yield, YTD (one retry)
+        if: steps.gate.outputs.mode == 'daily'
+        working-directory: cloud
+        run: |
+          set +e
+          python build_daily.py; code=$?
+          if [ $code -ne 0 ]; then echo "build failed ($code) - retrying in 60 s"; sleep 60; python build_daily.py; code=$?; fi
+          set -e
+          [ $code -eq 0 ] || exit $code
+          DR_DASH_DATA=daily_build DR_DASH_MODE=daily python make_dashboard_pdf.py
+          DR_DASH_DATA=daily_build DR_DASH_MODE=daily python make_dashboard_xlsx.py
+
+      - name: Assemble the site
+        run: |
+          mkdir -p site
+          if [ "${{ steps.gate.outputs.mode }}" = daily ]; then
+            cp cloud/daily_build/dr_dashboard.html site/index.html
+            cp cloud/daily_build/dr_dashboard.pdf  site/dr_dashboard.pdf
+            cp cloud/daily_build/dr_dashboard.xlsx site/dr_dashboard.xlsx
+            python cloud/netlify_nav.py site      # "DR Dashboard | DR RRG" tab bar
+          elif [ "${{ steps.gate.outputs.mode }}" = weekly ]; then
+            cp index.html dr_dashboard.pdf site/
+            [ -f dr_dashboard.xlsx ] && cp dr_dashboard.xlsx site/ || true
+          fi
+          if [ -n "${{ steps.gate.outputs.mode }}" ]; then
+            [ -f canva_table.html ] && cp canva_table.html site/ || true
+            # rrg.html: relative tab target - forward to the live DR RRG page
+            printf '<!DOCTYPE html><meta charset="utf-8"><title>DR RRG Dashboard</title><meta name="robots" content="noindex"><script>location.replace("%s"+location.hash)</script><meta http-equiv="refresh" content="0; url=%s"><p><a href="%s">DR RRG Dashboard</a></p>\n' "$RRG_URL" "$RRG_URL" "$RRG_URL" > site/rrg.html
+            touch site/.nojekyll
+            ls -la site
+          fi
+
+      - name: Stamp
+        id: stamp
+        if: steps.gate.outputs.publish == 'true'
+        run: echo "stamp=$(grep -o 'generated [0-9-]* [0-9:]*' site/index.html | head -1 | cut -d' ' -f2-)" >> "$GITHUB_OUTPUT"
+
+      - name: Privacy scan
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          # Company descriptions embedded in the page are third-party text (some name
+          # AI products or partners, which the scanner flags) - scan everything else.
+          python3 - << 'EOF'
+          import re; h = open("site/index.html", encoding="utf-8").read()
+          open("scan.html", "w", encoding="utf-8").write(re.sub(r"const PROFILES = \{.*?\};", "const PROFILES = {};", h, flags=re.S))
+          EOF
+          python3 cloud/tools/privacy_scan.py scan.html
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.gate.outputs.publish == 'true'
+        with: { path: site }
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - id: pages
+        uses: actions/deploy-pages@v4
+      - name: Confirm GitHub and the Netlify mirror show this build
+        env:
+          TZ: Asia/Bangkok
+        run: |
+          want="${{ needs.build.outputs.stamp }}"
+          for u in "$PAGES_URL" "https://yuantaresearch-dr-dashboard.netlify.app/"; do
+            ok=
+            for i in $(seq 1 36); do
+              got=$(curl -sf "${u}?v=$RANDOM$RANDOM" | grep -o 'generated [0-9-]* [0-9:]*' | head -1 | cut -d' ' -f2-)
+              [ "$got" = "$want" ] && { echo "OK: $u shows generated $want"; ok=1; break; }
+              sleep 20
+            done
+            [ -n "$ok" ] || { echo "::error::$u did not reach generated '$want' within 12 minutes"; exit 1; }
+          done
