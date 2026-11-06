@@ -24,7 +24,7 @@ from openpyxl.utils import get_column_letter
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 HERE = Path(__file__).resolve().parent
-DATA = Path(os.environ.get("DR_DASH_DATA") or HERE)
+DATA = Path(os.environ.get("DR_DASH_DATA") or HERE).resolve()
 OUT = DATA / "dr_dashboard.xlsx"
 
 d = json.loads((DATA / "dashboard_data.json").read_text(encoding="utf-8"))

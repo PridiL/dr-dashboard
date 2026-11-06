@@ -14,7 +14,7 @@ HERE = Path(__file__).resolve().parent
 # DR_DASH_DATA points the renderer at another data folder (the weekday daily
 # update, build_daily.py, renders from daily_draft\). Unset = the weekly build,
 # exactly as before. Logos and company profiles always come from HERE.
-DATA = Path(os.environ.get("DR_DASH_DATA") or HERE)
+DATA = Path(os.environ.get("DR_DASH_DATA") or HERE).resolve()
 DAILY = os.environ.get("DR_DASH_MODE") == "daily"
 SRC = DATA / "dashboard_data.json"
 PROFILES_SRC = HERE / "profiles.json"

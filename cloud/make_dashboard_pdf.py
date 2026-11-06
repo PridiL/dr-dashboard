@@ -20,7 +20,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 HERE = Path(__file__).resolve().parent
 # DR_DASH_DATA = the weekday daily build folder (run_daily.ps1); unset = weekly.
-DATA = Path(os.environ.get("DR_DASH_DATA") or HERE)
+DATA = Path(os.environ.get("DR_DASH_DATA") or HERE).resolve()
 SRC = DATA / "dr_dashboard.html"
 OUT = DATA / "dr_dashboard.pdf"
 
