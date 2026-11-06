@@ -87,7 +87,7 @@ jobs:
           fi
 
       - uses: actions/setup-python@v5
-        if: steps.gate.outputs.mode == 'daily'
+        if: steps.gate.outputs.mode != ''
         with: { python-version: "3.12", cache: pip, cache-dependency-path: cloud/requirements.txt }
 
       - name: Install (Python, Chromium for SET + PDF, fonts for the PDF)
@@ -133,6 +133,15 @@ jobs:
             touch site/.nojekyll
             ls -la site
           fi
+
+      - name: Download PDF / Excel must be the same build as the page
+        if: steps.gate.outputs.mode != ''
+        run: |
+          # user rule 2026-11-06: the download buttons always carry the page's data.
+          # A mismatch (e.g. a failed PDF step left an older file) stops the run here,
+          # before deploying - the live site keeps its last consistent build.
+          pip install -q openpyxl pypdf
+          python cloud/check_downloads.py site
 
       - name: Stamp
         id: stamp

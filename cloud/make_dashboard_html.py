@@ -101,6 +101,11 @@ def use_week_label(data):
 # day it was updated, e.g. "6 November 2026", not a Mon-Fri week range.
 _upd = datetime.strptime(str(d.get("generated", ""))[:10], "%Y-%m-%d").date()
 WEEK = f"{_upd.day} {_upd:%B %Y}"
+# Download links carry this build's stamp (?v=), so a browser or CDN cache can never
+# hand out an older PDF/Excel than the page shows (user rule 2026-11-06); the saved
+# file is named by date. check_downloads.py verifies all three before publishing.
+DL_V = "".join(ch for ch in str(d.get("generated", "")) if ch.isdigit())
+DL_NAME = f"SET_DR_Dashboard_{_upd:%Y-%m-%d}"
 DAILY_NOTE = (
     f' · <b>daily update</b>: prices, P/E, P/BV, dividend yield &amp; YTD as of '
     f'{d["generated"]}; DR list &amp; analyst targets from the Saturday build '
@@ -520,8 +525,8 @@ table.pf-hold .pf-bar i {{ display: block; height: 7px; border-radius: 3px; back
     {nav}
     <input id="q" type="search" placeholder="Search DR or company…" aria-label="Search DR">
     <button class="btn" onclick="window.print()" title="Print or save the dashboard as a PDF">🖨 Save as PDF / Print</button>
-    <a class="btn btn-dl" href="dr_dashboard.pdf" download title="Download the pre-rendered PDF">⬇ Download PDF</a>
-    <a class="btn btn-dl" href="dr_dashboard.xlsx" download title="Download this table as an Excel workbook">⬇ Download Excel</a>
+    <a class="btn btn-dl" href="dr_dashboard.pdf?v={DL_V}" download="{DL_NAME}.pdf" title="Download the pre-rendered PDF">⬇ Download PDF</a>
+    <a class="btn btn-dl" href="dr_dashboard.xlsx?v={DL_V}" download="{DL_NAME}.xlsx" title="Download this table as an Excel workbook">⬇ Download Excel</a>
   </div>
   <div class="tablebox">
     <table>
