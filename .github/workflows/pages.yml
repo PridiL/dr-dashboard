@@ -30,6 +30,14 @@ on:
         description: "Rebuild even if today's update is already live"
         type: boolean
         default: false
+      dry_run:
+        description: "Build everything but publish nothing (testing)"
+        type: boolean
+        default: false
+      simulate_set_down:
+        description: "Pretend set.or.th is unreachable, to test the TradingView fallback"
+        type: boolean
+        default: false
 permissions:
   contents: read
   pages: write
@@ -71,7 +79,12 @@ jobs:
             fi
             echo "Live page is from $live - updating."
           fi
-          echo "mode=daily" >> "$GITHUB_OUTPUT"; echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "mode=daily" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.dry_run }}" = true ]; then
+            echo "DRY RUN - builds, publishes nothing."; echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-python@v5
         if: steps.gate.outputs.mode == 'daily'
@@ -87,8 +100,13 @@ jobs:
       - name: Daily build - prices, P/E, P/BV, dividend yield, YTD (one retry)
         if: steps.gate.outputs.mode == 'daily'
         working-directory: cloud
+        env:
+          # contingency test: build_daily.py then takes every price from TradingView
+          DR_TEST_SET_DOWN: ${{ inputs.simulate_set_down && '1' || '' }}
         run: |
           set +e
+          # Closing prices: set.or.th, falling back to TradingView's SET:<DR> quotes
+          # (the user's DR watchlists) for any DR set.or.th cannot price today.
           python build_daily.py; code=$?
           if [ $code -ne 0 ]; then echo "build failed ($code) - retrying in 60 s"; sleep 60; python build_daily.py; code=$?; fi
           set -e

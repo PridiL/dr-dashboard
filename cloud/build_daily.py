@@ -54,14 +54,63 @@ _streams.append(sys.stdout)
 METRICS = ("pe", "pbv", "divYield")
 
 
+def tv_closes(symbols):
+    """DR symbol -> {"close", "date"} from TradingView's SET quote (SET:<DR>).
+
+    Public scanner endpoint, no login; the same quote the user's DR watchlists
+    show. "date" is the Bangkok date of the last trade, so a 07:30 run reports
+    the previous session. DRs TradingView does not list (e.g. ALAB01) are absent.
+    """
+    import requests
+    from datetime import timezone, timedelta
+    bkk = timezone(timedelta(hours=7))
+    out = {}
+    for i in range(0, len(symbols), 250):
+        chunk = symbols[i:i + 250]
+        body = {"symbols": {"tickers": [f"SET:{s}" for s in chunk]},
+                "columns": ["close", "last_bar_update_time"]}
+        for attempt in range(3):
+            try:
+                r = requests.post("https://scanner.tradingview.com/thailand/scan",
+                                  json=body, timeout=30,
+                                  headers={"User-Agent": bd.UA, "Content-Type": "application/json"})
+                r.raise_for_status()
+                for item in r.json().get("data", []):
+                    close, ts = (item.get("d") or [None, None])[:2]
+                    if close:
+                        out[item["s"].split(":", 1)[1]] = {
+                            "close": close,
+                            "date": datetime.fromtimestamp(ts, bkk).strftime("%Y-%m-%d") if ts else None,
+                        }
+                break
+            except Exception as e:
+                print(f"  TradingView quote batch failed ({type(e).__name__}) - retry {attempt + 1}")
+    return out
+
+
 def main():
     base = json.loads(BASE.read_text(encoding="utf-8"))
     rows = [dict(r) for r in base["rows"]]
     print(f"Saturday base: {len(rows)} DRs, generated {base['generated']}")
 
-    # ---- Closing price from SET (same rule as the weekly build_rows) --------
+    # ---- Closing price: set.or.th first, TradingView as the contingency ------
+    # (user rule 2026-11-06). SET's own DR feed is the source; if it cannot be
+    # read at all (blocked, down, bad payload) - or a DR is missing from it - the
+    # price comes from TradingView's SET:<DR> quote, i.e. exactly what the user's
+    # "DR Watchlist US" / "DR Watchlist Asia & Europe" lists display (those lists
+    # are built from these same SET:<DR> symbols). Public quote, no login.
     print("Fetching DR prices from SET ...")
-    payload = bd.fetch_dr_data()
+    payload, set_error = {"data": []}, None
+    try:
+        if os.environ.get("DR_TEST_SET_DOWN"):        # test switch for the fallback
+            raise RuntimeError("simulated set.or.th outage (DR_TEST_SET_DOWN)")
+        payload = bd.fetch_dr_data()
+        if not payload.get("data"):
+            raise RuntimeError("set.or.th returned no DR rows")
+    except Exception as e:
+        set_error = f"{type(e).__name__}: {str(e)[:160]}"
+        payload = {"data": []}
+        print(f"  set.or.th FAILED ({set_error}) - falling back to TradingView for every DR")
     by_sym = {r["symbol"]: r for r in payload["data"]}
     date_cur = (payload.get("tradingDate") or "")[:10]
     date_asia = (payload.get("tradingDateAsia") or "")[:10]
@@ -69,21 +118,40 @@ def main():
                     if date_asia and date_asia != date_cur else date_cur)
 
     new_listings = sorted(set(by_sym) - {r["symbol"] for r in rows})
-    gone, unchanged_close = [], 0
+    need_tv, n_set = [], 0
     for r in rows:
         s = by_sym.get(r["symbol"])
-        if s is None:                                  # delisted / suspended
-            gone.append(r["symbol"])
-            continue
-        close = s.get("last") if s.get("last") not in (None, 0) else s.get("prior")
+        close = None
+        if s is not None:
+            close = s.get("last") if s.get("last") not in (None, 0) else s.get("prior")
         if close in (None, 0):
-            unchanged_close += 1                       # keep Saturday's close
+            need_tv.append(r)                          # SET down, or no price for it
             continue
         r["close"] = close
+        n_set += 1
+
+    n_tv = n_kept = 0
+    if need_tv:
+        tv = tv_closes([r["symbol"] for r in need_tv])
+        for r in need_tv:
+            q = tv.get(r["symbol"])
+            if q:
+                r["close"] = q["close"]
+                n_tv += 1
+            else:
+                n_kept += 1                            # keep the last known close
+        if not by_sym:                                 # whole-source fallback: date from TV
+            dates = sorted({q["date"] for q in tv.values() if q.get("date")})
+            trading_date = (dates[-1] + " (TradingView)") if dates else "unknown (TradingView)"
+        kept = [r["symbol"] for r in need_tv if r["symbol"] not in tv]
+        print(f"  TradingView priced {n_tv}/{len(need_tv)} DR(s) set.or.th did not"
+              + (f"; kept last close for {len(kept)}: {', '.join(kept[:15])}" if kept else ""))
+    price_note = ("set.or.th" if not need_tv else
+                  f"TradingView (set.or.th unavailable: {set_error})" if not by_sym else
+                  f"set.or.th, TradingView for {n_tv} DR(s) set.or.th had no price for")
+    print(f"  closing prices: {n_set} set.or.th · {n_tv} TradingView · {n_kept} kept from last update")
     print(f"  trading date {trading_date} · {len(new_listings)} new listing(s) "
           f"NOT added{(': ' + ', '.join(new_listings)) if new_listings else ''}")
-    if gone:
-        print(f"  not on SET today (kept with Saturday's close): {', '.join(gone)}")
 
     # ---- P/E, P/BV, dividend yield: Yahoo -> Google -> TradingView ----------
     tickers = sorted({r["yahoo"] for r in rows if r.get("yahoo")})
@@ -146,7 +214,9 @@ def main():
            "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
            "fx": base.get("fx", {}), "rows": rows,
            "mode": "daily", "base_generated": base["generated"],
-           "new_listings_skipped": new_listings}
+           "new_listings_skipped": new_listings,
+           "price_source": price_note,
+           "price_counts": {"set": n_set, "tradingview": n_tv, "kept": n_kept}}
     (OUTDIR / "dashboard_data.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 

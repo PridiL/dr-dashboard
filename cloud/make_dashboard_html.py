@@ -106,6 +106,20 @@ DAILY_NOTE = (
     f'{d["generated"]}; DR list &amp; analyst targets from the Saturday build '
     f'({d.get("base_generated", "")})'
 ) if DAILY else ""
+# Contingency (user rule 2026-11-06): when set.or.th could not price the DRs,
+# closing prices come from TradingView - say so on the page, never silently.
+_ps = d.get("price_source") or ""
+if DAILY and _ps and _ps != "set.or.th":
+    _pc = d.get("price_counts") or {}
+    DAILY_NOTE += (
+        f' · <b style="color:var(--neg)">closing prices: '
+        + ("from TradingView today &mdash; set.or.th was unavailable"
+           if not _pc.get("set") else
+           f'{_pc.get("tradingview", 0)} DR(s) from TradingView (set.or.th had no price for them)')
+        + (f'; {_pc["kept"]} DR(s) not on TradingView keep their last available close'
+           if _pc.get("kept") else '')
+        + '</b>'
+    )
 
 # Target-price source -> short CSS class for the coloured tag.
 SRC_CLS = {"Google Finance": "g", "Yahoo Finance": "y", "TradingView": "t"}
