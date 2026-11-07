@@ -100,6 +100,11 @@ def use_week_label(data):
 # Since the dashboard updates every weekday (user 2026-11-06), the title shows the
 # day it was updated, e.g. "6 November 2026", not a Mon-Fri week range.
 _upd = datetime.strptime(str(d.get("generated", ""))[:10], "%Y-%m-%d").date()
+# A weekend build (the Saturday full update) is dated the coming Monday, the day
+# trading resumes - e.g. built Sat 7 Nov -> "9 November 2026" (user rule 2026-11-07).
+# Weekday builds keep their own date. The "generated" stamp stays the real build time.
+if _upd.weekday() >= 5:
+    _upd += timedelta(days=7 - _upd.weekday())
 WEEK = f"{_upd.day} {_upd:%B %Y}"
 # Download links carry this build's stamp (?v=), so a browser or CDN cache can never
 # hand out an older PDF/Excel than the page shows (user rule 2026-11-06); the saved

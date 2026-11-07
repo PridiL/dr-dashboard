@@ -14,7 +14,7 @@ import io
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -53,6 +53,8 @@ ws = wb.active
 ws.title = "DR Dashboard"
 f = lambda **k: Font(name="Arial", **k)
 upd = datetime.strptime(d["generated"][:10], "%Y-%m-%d")
+if upd.weekday() >= 5:  # weekend (Saturday) build -> dated the coming Monday, as the page
+    upd += timedelta(days=7 - upd.weekday())
 
 ws["A1"] = f"SET DR Dashboard ({upd.day} {upd:%B %Y})"
 ws["A1"].font = f(size=14, bold=True, color="1E4E9E")
